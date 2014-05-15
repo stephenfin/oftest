@@ -107,7 +107,6 @@ def config_setup():
     @return A pair (config, args) where config is an config
     object and args is any additional arguments from the command line
     """
-
     usage = "usage: %prog [options] (test|group)..."
 
     description = """\
@@ -128,6 +127,7 @@ with the '^' character.
 
     # Parse --interface
     def check_interface(option, opt, value):
+        """Type checker for interface parameters."""
         try:
             ofport, interface = value.split('@', 1)
             ofport = int(ofport)
@@ -235,7 +235,6 @@ def logging_setup(config):
     """
     Set up logging based on config
     """
-
     logging.getLogger().setLevel(DEBUG_LEVELS[config["debug"]])
 
     if config["log_dir"] != None:
@@ -253,7 +252,6 @@ def xunit_setup(config):
     """
     Set up xUnit output based on config
     """
-
     if not config["xunit"]:
         return
 
@@ -266,7 +264,6 @@ def pcap_setup(config):
     """
     Set up dataplane packet capturing based on config
     """
-
     if config["log_dir"] == None:
         filename = os.path.splitext(config["log_file"])[0] + '.pcap'
         oftest.dataplane_instance.start_pcap(filename)
@@ -278,7 +275,6 @@ def profiler_setup(config):
     """
     Set up profiler based on config
     """
-
     if not config["profile"]:
         return
 
@@ -292,7 +288,6 @@ def profiler_teardown(profiler):
     """
     Tear down profiler based on config
     """
-
     if not config["profile"]:
         return
 
@@ -313,10 +308,9 @@ def load_test_modules(config):
     @returns A dictionary from test module names to tuples of
     (module, dictionary from test names to test classes).
     """
-
     result = {}
 
-    for root, dirs, filenames in os.walk(config["test_dir"]):
+    for (root, _, filenames) in os.walk(config["test_dir"]):
         # Iterate over each python file
         for filename in fnmatch.filter(filenames, '[!.]*.py'):
             modname = os.path.splitext(os.path.basename(filename))[0]
@@ -325,17 +319,18 @@ def load_test_modules(config):
                 if sys.modules.has_key(modname):
                     mod = sys.modules[modname]
                 else:
-                    mod = imp.load_module(modname, *imp.find_module(modname, [root]))
+                    mod = imp.load_module(modname,
+                        *imp.find_module(modname, [root]))
             except:
                 logging.warning("Could not import file " + filename)
                 raise
 
             # Find all testcases defined in the module
-            tests = dict((k, v) for (k, v) in mod.__dict__.items() if type(v) == type and
-                                                                      issubclass(v, unittest.TestCase) and
-                                                                      hasattr(v, "runTest"))
+            tests = dict((k, v) for (k, v) in mod.__dict__.items()
+                     if type(v) == type and issubclass(v, unittest.TestCase)
+                     and hasattr(v, "runTest"))
             if tests:
-                for (testname, test) in tests.items():
+                for (_, test) in tests.items():
                     # Set default annotation values
                     if not hasattr(test, "_groups"):
                         test._groups = []
@@ -366,18 +361,18 @@ def prune_tests(test_specs, test_modules, version):
     @returns Same format as the output of load_test_modules.
     """
     result = {}
-    for e in test_specs:
+    for spec in test_specs:
         matched = False
 
-        if e.startswith('^'):
+        if spec.startswith('^'):
             negated = True
-            e = e[1:]
+            spec = spec[1:]
         else:
             negated = False
 
         for (modname, (mod, tests)) in test_modules.items():
             for (testname, test) in tests.items():
-                if e in test._groups or e == "%s.%s" % (modname, testname):
+                if spec in test._groups or spec == "%s.%s" % (modname, testname):
                     result.setdefault(modname, (mod, {}))
                     if not negated:
                         if not hasattr(test, "_versions") or version in test._versions:
@@ -390,7 +385,7 @@ def prune_tests(test_specs, test_modules, version):
                     matched = True
 
         if not matched:
-            die("test-spec element %s did not match any tests" % e)
+            die("test-spec element %s did not match any tests" % spec)
 
     return result
 
@@ -404,6 +399,7 @@ def die(msg, exit_val=1):
 #
 
 def main():
+    """Main script."""
     # Setup global configuration
     (new_config, args) = config_setup()
     oftest.config.update(new_config)
@@ -414,7 +410,8 @@ def main():
 
     # Pick an OpenFlow protocol module based on the configured version
     name_to_version = dict((v, k) for k, v in loxi.version_names.iteritems())
-    sys.modules["ofp"] = loxi.protocol(name_to_version[config["openflow_version"]])
+    sys.modules["ofp"] = loxi.protocol(
+        name_to_version[config["openflow_version"]])
 
     # Allow tests to import each other
     sys.path.append(config["test_dir"])
@@ -424,9 +421,9 @@ def main():
         print("WARNING: The --test-spec option is deprecated", file=sys.stderr)
         test_specs += config["test_spec"].split(',')
     if config["test_file"] != None:
-        with open(config["test_file"], 'r') as f:
-            for line in f:
-                line, _, _ = line.partition('#') # remove comments
+        with open(config["test_file"], 'r') as fileh:
+            for line in fileh:
+                line, _, _ = line.partition('#')  # remove comments
                 line = line.strip()
                 if line:
                     test_specs.append(line)
@@ -442,22 +439,22 @@ def main():
         all_groups = set()
 
         print("""
-    Tests are shown grouped by module. If a test is in any groups beyond
-    "standard" and its module's group then they are shown in parentheses.
+Tests are shown grouped by module. If a test is in any groups beyond
+"standard" and its module's group then they are shown in parentheses.
 
-    Tests marked with '*' are non-standard and may require vendor extensions or
-    special switch configuration. These are not part of the "standard" test group.
+Tests marked with '*' are non-standard and may require vendor extensions or
+special switch configuration. These are not part of the "standard" test group.
 
-    Tests marked with '!' are disabled because they are experimental,
-    special-purpose, or are too long to be run normally. These are not part of
-    the "standard" test group or their module's test group.
+Tests marked with '!' are disabled because they are experimental,
+special-purpose, or are too long to be run normally. These are not part of
+the "standard" test group or their module's test group.
 
-    Tests marked (TP1) after name take --test-params including:
+Tests marked (TP1) after name take --test-params including:
 
-        'vid=N;strip_vlan=bool;add_vlan=bool'
+    'vid=N;strip_vlan=bool;add_vlan=bool'
 
-    Test List:
-    """)
+Test List:
+""")
         for (modname, (mod, tests)) in test_modules.items():
             mod_count += 1
             desc = (mod.__doc__ or "No description").strip().split('\n')[0]
@@ -485,7 +482,8 @@ def main():
 
         sys.exit(0)
 
-    test_modules = prune_tests(test_specs, test_modules, config["openflow_version"])
+    test_modules = prune_tests(test_specs, test_modules,
+                               config["openflow_version"])
 
     # Check if test list is requested; display and exit if so
     if config["list_test_names"]:
@@ -511,7 +509,8 @@ def main():
     logging.info("Importing platform: " + platform_name)
     platform_mod = None
     try:
-        platform_mod = imp.load_module(platform_name, *imp.find_module(platform_name, [config["platform_dir"]]))
+        platform_mod = imp.load_module(platform_name,
+            *imp.find_module(platform_name, [config["platform_dir"]]))
     except:
         logging.warn("Failed to import " + platform_name + " platform module")
         raise
@@ -538,12 +537,12 @@ def main():
         sys.exit(1)
 
     if config["random_seed"] is not None:
-        logging.info("Random seed: %d" % config["random_seed"])
+        logging.info("Random seed: %d", config["random_seed"])
         random.seed(config["random_seed"])
     else:
         # Generate random seed and report to log file
         seed = random.randrange(100000000)
-        logging.info("Autogen random seed: %d" % seed)
+        logging.info("Autogen random seed: %d", seed)
         random.seed(seed)
 
     # Remove python's signal handler which raises KeyboardError. Exiting from
